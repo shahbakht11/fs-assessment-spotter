@@ -26,6 +26,10 @@ log = logging.getLogger(__name__)
 HOURLY_VARS = ("wind_speed_10m", "wind_gusts_10m", "rain", "showers", "snowfall", "temperature_2m", "weather_code")
 BATCH_SIZE = 100
 SNAP_DEG = 0.02  # ~1.4 mi; well below the ~3 km model grid, lets nearby points share a fetch
+# Coarser snaps used only when a trip has more distinct points than the location budget.
+SNAP_STEPS = (0.02, 0.05, 0.08, 0.12, 0.17, 0.25, 0.35, 0.5)
+RATE_LIMIT_MESSAGE = ("The free weather service (Open-Meteo) allows 600 forecast locations per minute "
+                      "and that budget is used up. Please wait a minute and try again.")
 FORECAST_HORIZON = timedelta(days=15)
 
 
@@ -68,8 +72,21 @@ class Series:
         return Reading(*vals, int(self.code[inst] or 0))
 
 
-def snap(p: LatLon) -> LatLon:
-    return (round(round(p[0] / SNAP_DEG) * SNAP_DEG, 4), round(round(p[1] / SNAP_DEG) * SNAP_DEG, 4))
+def snap(p: LatLon, deg: float = SNAP_DEG) -> LatLon:
+    return (round(round(p[0] / deg) * deg, 4), round(round(p[1] / deg) * deg, 4))
+
+
+def choose_snap(points: list[LatLon], budget: int) -> float:
+    """Finest snap whose distinct points fit the location budget.
+
+    Open-Meteo's free tier counts every location as one call (600/minute). Long trips sampled
+    every 10 mi can need more, so nearby checkpoints then share one forecast cell. Each
+    checkpoint still reads that cell at its *own* ETA.
+    """
+    for deg in SNAP_STEPS:
+        if len({snap(p, deg) for p in points}) <= budget:
+            return deg
+    return SNAP_STEPS[-1]
 
 
 def floor_hour(dt: datetime) -> datetime:
@@ -107,26 +124,33 @@ def _fetch_batch(session: requests.Session, pts: list[LatLon], start: datetime, 
         "start_hour": _fmt(start),
         "end_hour": _fmt(end),
     }
-    for attempt in range(3):
+    if settings.OPEN_METEO_API_KEY:
+        params["apikey"] = settings.OPEN_METEO_API_KEY
+    for attempt in range(2):
         resp = session.get(settings.OPEN_METEO_URL, params=params, timeout=settings.HTTP_TIMEOUT_S)
-        if resp.status_code == 429 and attempt < 2:
-            time.sleep(1.5 * (attempt + 1))
-            continue
+        if resp.status_code == 429:
+            # The per-minute budget won't refill within a request's lifetime; one short retry
+            # covers a burst from a parallel batch, then give up with a clear message.
+            if attempt == 0 and "Minutely" not in resp.text:
+                time.sleep(1.0)
+                continue
+            raise WeatherError(RATE_LIMIT_MESSAGE)
         if resp.status_code != 200:
-            raise WeatherError(f"Open-Meteo HTTP {resp.status_code}: {resp.text[:200]}")
+            raise WeatherError(f"Weather service error (HTTP {resp.status_code}). Please try again.")
         data = resp.json()
         blocks = data if isinstance(data, list) else [data]
         return [_parse(b, start) for b in blocks]
-    raise WeatherError("Open-Meteo rate limit reached; try again in a minute.")
+    raise WeatherError(RATE_LIMIT_MESSAGE)
 
 
-def fetch_series(points: list[LatLon], start: datetime, end: datetime) -> dict[LatLon, Series]:
-    """Hourly series covering [start, end] for each point, keyed by the *snapped* point."""
+def fetch_series(points: list[LatLon], start: datetime, end: datetime,
+                 snap_deg: float = SNAP_DEG) -> dict[LatLon, Series]:
+    """Hourly series covering [start, end] for each point, keyed by snap(point, snap_deg)."""
     start, end = floor_hour(start), floor_hour(end) + timedelta(hours=1)
     end = min(end, forecast_end_limit())
     if end < start:
         return {}
-    unique = list(dict.fromkeys(snap(p) for p in points))
+    unique = list(dict.fromkeys(snap(p, snap_deg) for p in points))
     result: dict[LatLon, Series] = {}
     missing = []
     for p in unique:

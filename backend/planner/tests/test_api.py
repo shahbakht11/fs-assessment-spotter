@@ -21,10 +21,10 @@ def straight_route(start, end, n=60, hours=10.0, source="test"):
 ORIGIN, DEST = (41.0, -90.0), (41.0, -100.0)  # ~520 mi due west
 
 
-def fake_series(points, start, end, wind=10.0, rain=0.0, snow=0.0):
+def fake_series(points, start, end, snap_deg=0.02, *, wind=10.0, rain=0.0, snow=0.0):
     start = floor_hour(start)
     n = int((floor_hour(end) - start).total_seconds() // 3600) + 2
-    return {snap(p): Series(start, [wind] * n, [wind] * n, [rain] * n, [snow] * n, [40.0] * n, [0] * n)
+    return {snap(p, snap_deg): Series(start, [wind] * n, [wind] * n, [rain] * n, [snow] * n, [40.0] * n, [0] * n)
             for p in points}
 
 
@@ -142,3 +142,34 @@ class HeatmapApiTests(SimpleTestCase):
     def test_rejects_bad_routes(self, fetch):
         resp = self.client.post("/api/heatmap", json.dumps({"routes": []}), content_type="application/json")
         self.assertEqual(resp.status_code, 400)
+
+
+class WeatherBudgetTests(SimpleTestCase):
+    def test_long_trips_share_forecast_cells_to_stay_within_budget(self):
+        from planner.weather import choose_snap
+        # ~2,800 mi of checkpoints every 10 mi across 3 routes ≈ 850 points
+        pts = [(35 + 0.02 * k % 6, -118 + 0.05 * k) for k in range(850)]
+        deg = choose_snap(pts, 350)
+        self.assertLessEqual(len({snap(p, deg) for p in pts}), 350)
+        self.assertEqual(choose_snap(pts[:100], 350), 0.02)  # short trips keep the fine grid
+
+    def test_rate_limit_gives_a_clear_message(self):
+        from planner.weather import WeatherError, _fetch_batch
+        session = mock.Mock()
+        session.get.return_value = mock.Mock(status_code=429, text='{"reason":"Minutely API request limit exceeded"}')
+        start = datetime(2026, 11, 7, tzinfo=timezone.utc)
+        with self.assertRaisesRegex(WeatherError, "600 forecast locations per minute"):
+            _fetch_batch(session, [(41.0, -90.0)], start, start + timedelta(hours=3))
+        self.assertEqual(session.get.call_count, 1)  # no pointless retry on the per-minute limit
+
+    @mock.patch("planner.services.plan_routes")
+    @mock.patch("planner.services.fetch_series")
+    def test_rate_limit_returns_readable_error(self, fetch, plan_routes):
+        from planner.weather import RATE_LIMIT_MESSAGE, WeatherError
+        plan_routes.return_value = ([straight_route(ORIGIN, DEST)], "test", [])
+        fetch.side_effect = WeatherError(RATE_LIMIT_MESSAGE)
+        body = {"origin": {"lat": ORIGIN[0], "lon": ORIGIN[1]}, "destination": {"lat": DEST[0], "lon": DEST[1]},
+                "departure": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(), "load_lbs": 1000}
+        resp = self.client.post("/api/plan", json.dumps(body), content_type="application/json")
+        self.assertEqual(resp.status_code, 502)
+        self.assertEqual(resp.json()["error"], RATE_LIMIT_MESSAGE)

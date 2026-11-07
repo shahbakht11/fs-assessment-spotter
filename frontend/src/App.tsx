@@ -120,7 +120,12 @@ export default function App() {
           setHeatStatus('error')
         })
     } catch (e) {
-      if ((e as Error).name !== 'AbortError') setPlanError((e as Error).message)
+      if ((e as Error).name !== 'AbortError') {
+        // Don't leave the previous trip's results under the new trip's inputs.
+        setPlan(null)
+        setSelectedId(null)
+        setPlanError((e as Error).message)
+      }
     } finally {
       if (inflight.current === ctrl) setLoading(false)
     }
@@ -330,6 +335,10 @@ export default function App() {
                 checkpoint's level is the worst of wind, rain and snow (load rules applied to wind) and covers the road
                 halfway to its neighbours. Routes rank by fewest No Travel miles, then Severe miles, High miles,
                 mileage-weighted average risk (Low 0 … No Travel 4), then travel time.
+              </p>
+              <p>
+                Forecasts are fetched on a ~{plan.forecast_cell_mi} mi grid (coarser only on very long trips, to stay
+                within the free weather API's 600 locations per minute).
               </p>
             </details>
           </section>

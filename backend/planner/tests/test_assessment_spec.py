@@ -37,12 +37,12 @@ def route_through(points, hours, source="test", n_per_leg=40):
 
 def series_by(fn):
     """fetch_series replacement: fn(lat, lon, hour_index) -> (wind, rain, snow)."""
-    def fetch(points, start, end):
+    def fetch(points, start, end, snap_deg=0.02):
         start = floor_hour(start)
         n = int((floor_hour(end) - start).total_seconds() // 3600) + 3
         out = {}
         for p in points:
-            sp = snap(p)
+            sp = snap(p, snap_deg)
             vals = [fn(sp[0], sp[1], h) for h in range(n)]
             out[sp] = Series(start, [v[0] for v in vals], [v[0] for v in vals], [v[1] for v in vals],
                              [v[2] for v in vals], [40.0] * n, [0] * n)
@@ -271,7 +271,7 @@ class SpecHeatmap(SimpleTestCase):
         # Cells are in the corridor: the straight route runs along lat 41, corridor is 45 mi.
         g = data["grid"]
         (south, _), (north, _) = g["bounds"]
-        self.assertLess(north - south, 3.5)
+        self.assertLess(north - south, 4)
         # Values change over time (the slider has something to show).
         cell = data["cells"][0]
         self.assertNotEqual(cell["wind"][0], cell["wind"][48])

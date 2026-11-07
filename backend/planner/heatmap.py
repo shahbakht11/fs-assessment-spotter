@@ -16,7 +16,7 @@ from .weather import fetch_series, floor_hour, snap
 
 HOURS = 48
 CORRIDOR_MI = 45.0
-MAX_CELLS = 320  # keeps one heatmap well inside Open-Meteo's free per-minute budget
+MAX_CELLS = 220  # plan (≤350) + heatmap stay under Open-Meteo's free 600 locations/minute
 MIN_SPACING_MI = 8.0
 MILES_PER_DEG_LAT = 69.0
 

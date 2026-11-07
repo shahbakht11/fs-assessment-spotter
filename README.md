@@ -58,6 +58,12 @@ risk and load rules, and **recommends the safest route**. A corridor **weather h
   accumulation over the hour that *ends* at its timestamp, so the hour **containing** the ETA is used.
 * Coordinates are snapped to 0.02° (~1.4 mi, finer than the ~3 km model grid) so routes that share
   a highway share fetches. Results are cached for 30 min.
+* **Free-tier budget.** Open-Meteo's free API counts every location as one call and allows 600 per
+  minute. A plan uses at most 350 locations and a heatmap at most 220, so one trip fits in one minute.
+  On very long trips (e.g. NYC → LA, ~8,600 route-miles across 3 routes), nearby checkpoints share a
+  coarser forecast cell (up to ~35 mi). Every checkpoint is still scored at its own ETA, and the UI shows
+  the cell size. Setting `OPEN_METEO_API_KEY` (paid) and a higher `PLAN_LOCATION_BUDGET` restores the
+  fine grid. Hitting the limit gives a clear "wait a minute" message.
 * ETAs beyond the forecast horizon are marked **No forecast**. They are excluded from the scores
   and the UI says so.
 
@@ -162,7 +168,7 @@ No API keys are needed: every service is free and keyless.
 
 ### Tests
 ```bash
-cd backend && ../.venv/bin/python manage.py test planner   # 62 tests: risk table, load rules,
+cd backend && ../.venv/bin/python manage.py test planner   # 65 tests: risk table, load rules,
                                                            # HOS/ETA, checkpoints, ranking, API
 cd frontend && npm test && npm run lint                    # geometry, truck progress, colour scale
 ```

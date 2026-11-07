@@ -35,7 +35,13 @@ CACHES = {
 # Third-party services (all free, no API keys)
 VALHALLA_URL = os.environ.get("VALHALLA_URL", "https://valhalla1.openstreetmap.de/route")
 OSRM_URL = os.environ.get("OSRM_URL", "https://router.project-osrm.org/route/v1/driving")
-OPEN_METEO_URL = os.environ.get("OPEN_METEO_URL", "https://api.open-meteo.com/v1/forecast")
+OPEN_METEO_API_KEY = os.environ.get("OPEN_METEO_API_KEY", "")
+OPEN_METEO_URL = os.environ.get(
+    "OPEN_METEO_URL",
+    "https://customer-api.open-meteo.com/v1/forecast" if OPEN_METEO_API_KEY else "https://api.open-meteo.com/v1/forecast",
+)
+# Forecast locations one plan may request; plan + heatmap must stay under the free tier's 600/min.
+PLAN_LOCATION_BUDGET = int(os.environ.get("PLAN_LOCATION_BUDGET", "350"))
 PHOTON_URL = os.environ.get("PHOTON_URL", "https://photon.komoot.io/api/")
 NOMINATIM_URL = os.environ.get("NOMINATIM_URL", "https://nominatim.openstreetmap.org/search")
 HTTP_USER_AGENT = os.environ.get("HTTP_USER_AGENT", "weather-aware-truck-routing/1.0 (assessment demo)")

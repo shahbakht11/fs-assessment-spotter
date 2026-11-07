@@ -9,7 +9,9 @@ from .recommend import recommend, summarize
 from .risk import assess
 from .routing import Route, plan_routes
 from .timeline import Timeline
-from .weather import fetch_series, snap
+from django.conf import settings
+
+from .weather import choose_snap, fetch_series, snap
 
 INTERVALS_MI = (10, 25, 50)
 ROUTE_IDS = ("A", "B", "C")
@@ -87,7 +89,8 @@ def plan_trip(origin: LatLon, dest: LatLon, departure: datetime, load_lbs: float
 
     # 2. One batched forecast fetch for every checkpoint of every route/interval.
     latest_arrival = max(tl.arrival for tl in timelines)
-    series = fetch_series(all_points, departure, latest_arrival)
+    snap_deg = choose_snap(all_points, settings.PLAN_LOCATION_BUDGET)
+    series = fetch_series(all_points, departure, latest_arrival, snap_deg)
 
     # 3. Read the forecast at each checkpoint's ETA and classify it.
     payload_routes = []
@@ -97,7 +100,7 @@ def plan_trip(origin: LatLon, dest: LatLon, departure: datetime, load_lbs: float
         body["checkpoints"] = {}
         body["summary"] = {}
         for interval, cps in per_interval.items():
-            out = [_score(cp, series, load_lbs) for cp in cps]
+            out = [_score(cp, series, load_lbs, snap_deg) for cp in cps]
             body["checkpoints"][str(interval)] = out
             s = summarize(out, tl.total_elapsed_s)
             summaries[interval][rid] = s
@@ -111,13 +114,14 @@ def plan_trip(origin: LatLon, dest: LatLon, departure: datetime, load_lbs: float
         "load_lbs": load_lbs,
         "include_hos": include_hos,
         "intervals": list(INTERVALS_MI),
+        "forecast_cell_mi": round(snap_deg * 69, 1),
         "routes": payload_routes,
         "recommendation": {str(i): recommend(summaries[i], names) for i in INTERVALS_MI},
     }
 
 
-def _score(cp: dict, series: dict, load_lbs: float) -> dict:
-    s = series.get(snap((cp["lat"], cp["lon"])))
+def _score(cp: dict, series: dict, load_lbs: float, snap_deg: float) -> dict:
+    s = series.get(snap((cp["lat"], cp["lon"]), snap_deg))
     reading = s.at(cp["eta"]) if s else None
     out = {
         "mi": round(cp["mi"], 1),

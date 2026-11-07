@@ -40,9 +40,12 @@ def api(view):
             return JsonResponse(view(request, *args, **kwargs))
         except BadRequest as exc:
             return JsonResponse({"error": str(exc)}, status=400)
-        except (RoutingError, WeatherError, geocode.GeocodeError, requests.RequestException) as exc:
+        except (RoutingError, WeatherError, geocode.GeocodeError) as exc:
             log.warning("upstream failure: %s", exc)
-            return JsonResponse({"error": f"Upstream service error: {exc}"}, status=502)
+            return JsonResponse({"error": str(exc)}, status=502)
+        except requests.RequestException as exc:
+            log.warning("upstream unreachable: %s", exc)
+            return JsonResponse({"error": "Could not reach an external service. Please try again."}, status=502)
 
     return wrapper
 

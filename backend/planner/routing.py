@@ -358,7 +358,9 @@ def plan_routes(origin: LatLon, dest: LatLon, load_lbs: float) -> tuple[list[Rou
         try:
             routes, provider = _osrm_routes(osrm, origin, dest), osrm.name
         except (RoutingError, *ROUTING_ERRORS) as exc2:
-            raise RoutingError(f"No routing provider could find a route: {exc2}") from exc2
+            log.warning("OSRM fallback failed too: %s", exc2)
+            raise RoutingError("Couldn't find a drivable route between these places. "
+                               "Check both locations are reachable by road.") from exc2
         warnings.append("Truck routing is unavailable for this trip (the public truck router only "
                         "accepts trips up to ~930 mi straight-line), so car routing with a 65 mph truck speed cap is used.")
     if len(routes) < TARGET_ROUTES:

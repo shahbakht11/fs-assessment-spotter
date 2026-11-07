@@ -72,6 +72,7 @@ export interface PlanResponse {
   load_lbs: number
   include_hos: boolean
   intervals: number[]
+  forecast_cell_mi: number
   routes: RouteOption[]
   recommendation: Record<Interval, Recommendation>
 }

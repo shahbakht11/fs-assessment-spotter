@@ -1,1 +1,3 @@
--r backend/requirements.txt
+# Vercel installs from this file; keep in sync with backend/requirements.txt
+Django>=5.2,<7
+requests>=2.32
